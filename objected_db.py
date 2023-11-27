@@ -4,9 +4,10 @@ from psycopg2 import sql
 connection_parameters = {
     'dbname   ': 'test_db',
     'user     ': 'postgres',
-    'password ': 123,
+    'password ': 1,
     'host     ': 'localhost',
-    'port     ': 5432}
+    'port     ': 5432
+}
 
 
 class DBHandler:
@@ -26,7 +27,7 @@ class Query:
         self.columns = []
 
     def select(self, *columns):
-        self.columns.append(*columns)
+        self.columns.extend(columns)
         return self
 
     def create(self, values):
@@ -47,14 +48,18 @@ class Query:
     def build(self):
         query = None
         if self.columns:
-            query = sql.SQL("select {field} from {table} where {pkey} = %s").format(
-                field=sql.Identifier('my_name'),
-                table=sql.Identifier('some_table'),
-                pkey=sql.Identifier('id')
+            query = "select {field} from {table} where {pkey}".format(
+                field=", ".join(self.columns),
+                table=self.table_name,
+                pkey='id',
             )
 
+            return query
 
+
+# db_handler = DBHandler(connection_parameters)
 q = Query(table_name='users')
-result = q.select(['id', 'name'])
-
-db_handler = DBHandler(connection_parameters)
+q.select('*')
+q.where('ww')
+result = q.build()
+print(result)
