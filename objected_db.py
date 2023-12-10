@@ -9,23 +9,24 @@ connection_parameters = {
     'port     ': 5432
 }
 
-
 class DBHandler:
     def __init__(self, connection_parameters) -> None:
         self.connection = postgres.connect(**connection_parameters)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.connection.close()
+
     def exec(self, query, params=None):
-        if params:
-            with self.connection.cursor() as cursor:
-                cursor.execute(query, params)
-        else:
-            with self.connection.cursor() as cursor:
-                cursor.execute(query)
+        with self.connection.cursor() as cursor:
+            cursor.execute(query, params)
 
     def fetch(self, query):
         with self.connection.cursor() as cursor:
-            return cursor.fetchall(query)
-
+            cursor.execute(query)
+            return cursor.fetchall()
 
 class Query:
     def __init__(self, table_name: str):
@@ -34,7 +35,6 @@ class Query:
         self.values = []
         self.columns = []
         self.operation = None
-        self.query = None
 
     def select(self, *columns):
         self.columns.extend(columns)
@@ -63,52 +63,44 @@ class Query:
     def build(self):
         query = None
         if self.operation == 'select':
-            query = "select {fields} from {table} where {condition}".format(
-                fields=", ".join(self.columns),
-                table=self.table_name,
-                condition=" ".join(self.conditions),
+            fields = [sql.Identifier(column) for column in self.columns]
+            condition = sql.SQL(" AND ").join([sql.Identifier(cond) for cond in self.conditions])
+            query = sql.SQL("SELECT {} FROM {} WHERE {}").format(
+                sql.SQL(", ").join(fields),
+                sql.Identifier(self.table_name),
+                condition
             )
         elif self.operation == 'insert':
-            query = "insert into {table} ({fields}) values ({values})".format(
-                fields=", ".join(self.columns),
-                table=self.table_name,
-                values=", ".join(self.values)
+            fields = [sql.Identifier(column) for column in self.columns]
+            values = [sql.Literal(value) for value in self.values]
+            query = sql.SQL("INSERT INTO {} ({}) VALUES ({})").format(
+                sql.Identifier(self.table_name),
+                sql.SQL(", ").join(fields),
+                sql.SQL(", ").join(values)
             )
         elif self.operation == 'update':
-            query = "update {table} set {fields} where {values}".format(
-                fields=" ".join(self.values),
-                table=self.table_name,
-                values=" ".join(self.values)
+            fields = sql.SQL(", ").join([sql.Identifier(value) for value in self.values])
+            condition = sql.SQL(" AND ").join([sql.Identifier(cond) for cond in self.conditions])
+            query = sql.SQL("UPDATE {} SET {} WHERE {}").format(
+                sql.Identifier(self.table_name),
+                fields,
+                condition
             )
         elif self.operation == 'delete':
-            query = "delete from {table} where {condition}".format(
-                table=self.table_name,
-                condition=" ".join(self.conditions)
+            condition = sql.SQL(" AND ").join([sql.Identifier(cond) for cond in self.conditions])
+            query = sql.SQL("DELETE FROM {} WHERE {}").format(
+                sql.Identifier(self.table_name),
+                condition
             )
-        db = DBHandler(connection_parameters)
-        if self.operation == 'select':
-            return db.fetch(query)
-        else:
-            db.exec(query)
-            return "query executed"
+        with DBHandler(connection_parameters) as db:
+            if self.operation == 'select':
+                return db.fetch(query)
+            else:
+                db.exec(query)
+                return "Query executed"
 
-
-# q = Query(table_name='users')
-# q.select('id', 'name')
-# q.where('id', '=', '1')
-# print(q.build())
-
-# q = Query(table_name='users')
-# q.insert(columns=['id', 'name'], values=['1', 'ehsan'])
-# print(q.build())
-
-# q = Query(table_name='users')
-# q.update(['name', '=', 'ehsan'])
-# q.where('id', '=', '1')
-# print(q.build())
-
+# نمونه استفاده:
 q = Query(table_name='users')
 q.delete()
 q.where('id', '=', '1')
 print(q.build())
-
